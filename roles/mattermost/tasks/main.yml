@@ -1,0 +1,96 @@
+- name: Paquets
+  ansible.builtin.apt:
+    name: [postgresql, curl, ca-certificates, tar]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: PostgreSQL démarré
+  ansible.builtin.service: { name: postgresql, state: started, enabled: true }
+
+- name: Rôle PostgreSQL
+  ansible.builtin.shell: |
+    runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='{{ mattermost_db_user }}'" | grep -q 1 && exit 0
+    runuser -u postgres -- psql -c "CREATE ROLE {{ mattermost_db_user }} LOGIN PASSWORD '{{ mattermost_db_password }}'"
+    echo CHANGED
+  args: { executable: /bin/bash }
+  register: pg_role
+  changed_when: "'CHANGED' in pg_role.stdout"
+
+- name: Base PostgreSQL
+  ansible.builtin.shell: |
+    runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_database WHERE datname='{{ mattermost_db_name }}'" | grep -q 1 && exit 0
+    runuser -u postgres -- psql -c "CREATE DATABASE {{ mattermost_db_name }} OWNER {{ mattermost_db_user }}"
+    echo CHANGED
+  args: { executable: /bin/bash }
+  register: pg_db
+  changed_when: "'CHANGED' in pg_db.stdout"
+
+- name: Utilisateur système
+  ansible.builtin.user:
+    name: mattermost
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ mattermost_dir }}"
+    create_home: false
+
+- name: Téléchargement
+  ansible.builtin.get_url:
+    url: "https://releases.mattermost.com/{{ mattermost_version }}/mattermost-{{ mattermost_version }}-linux-amd64.tar.gz"
+    dest: "/var/tmp/mattermost-{{ mattermost_version }}.tar.gz"
+    mode: "0644"
+    timeout: 300
+
+- name: Extraction
+  ansible.builtin.unarchive:
+    src: "/var/tmp/mattermost-{{ mattermost_version }}.tar.gz"
+    dest: /opt
+    remote_src: true
+    creates: "{{ mattermost_dir }}/bin/mattermost"
+
+- name: Dossier de données
+  ansible.builtin.file: { path: "{{ mattermost_dir }}/data", state: directory, owner: mattermost, group: mattermost, mode: "0750" }
+
+- name: Droits sur l'installation
+  ansible.builtin.file: { path: "{{ mattermost_dir }}", state: directory, recurse: true, owner: mattermost, group: mattermost }
+
+- name: Fichier d'environnement
+  ansible.builtin.template: { src: mattermost.env.j2, dest: /etc/mattermost.env, owner: root, group: mattermost, mode: "0640" }
+  notify: Redémarrer mattermost
+
+- name: Unité systemd
+  ansible.builtin.template: { src: mattermost.service.j2, dest: /etc/systemd/system/mattermost.service, mode: "0644" }
+  notify: Redémarrer mattermost
+
+- name: Recharger systemd
+  ansible.builtin.systemd: { daemon_reload: true }
+
+- name: Service démarré
+  ansible.builtin.service: { name: mattermost, state: started, enabled: true }
+
+- name: Attendre l'API (1 à 3 min au premier démarrage)
+  ansible.builtin.uri: { url: "http://127.0.0.1:8065/api/v4/system/ping" }
+  register: mm_ping
+  until: mm_ping.status == 200
+  retries: 30
+  delay: 10
+
+- name: Compte administrateur
+  ansible.builtin.shell: |
+    M="runuser -u mattermost -- {{ mattermost_dir }}/bin/mmctl --local"
+    $M user list --all | grep -qw '{{ mattermost_admin_user }}' && exit 0
+    $M user create --email '{{ mattermost_admin_email }}' --username '{{ mattermost_admin_user }}' \
+      --password '{{ mattermost_admin_password }}' --system-admin && echo CHANGED
+  args: { executable: /bin/bash }
+  register: mm_admin
+  changed_when: "'CHANGED' in mm_admin.stdout"
+
+- name: Équipe AeroCentre
+  ansible.builtin.shell: |
+    M="runuser -u mattermost -- {{ mattermost_dir }}/bin/mmctl --local"
+    $M team list | grep -qw '{{ mattermost_team }}' && exit 0
+    $M team create --name '{{ mattermost_team }}' --display-name 'AeroCentre' && \
+    $M team users add '{{ mattermost_team }}' '{{ mattermost_admin_user }}' && echo CHANGED
+  args: { executable: /bin/bash }
+  register: mm_team
+  changed_when: "'CHANGED' in mm_team.stdout"

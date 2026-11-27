@@ -1,0 +1,11 @@
+mattermost_version: "11.7.2"
+mattermost_dir: /opt/mattermost
+mattermost_listen: "0.0.0.0:8065"
+mattermost_site_url: "http://10.100.30.13:8065"
+mattermost_db_name: mattermost
+mattermost_db_user: mmuser
+mattermost_db_password: "Mm-Labo-2026"
+mattermost_admin_user: mmadmin
+mattermost_admin_email: mmadmin@aerocentre.lan
+mattermost_admin_password: "Admin-Labo-2026!"
+mattermost_team: aerocentre
