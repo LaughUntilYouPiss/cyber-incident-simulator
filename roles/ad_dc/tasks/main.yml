@@ -1,0 +1,109 @@
+---
+- name: Nom d'hôte
+  ansible.builtin.hostname:
+    name: "{{ ad_dc_hostname }}"
+
+- name: Supprimer la ligne 127.0.1.1 (Samba refuse un FQDN sur le loopback)
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1\s'
+    state: absent
+
+- name: FQDN dans /etc/hosts
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^{{ ad_dc_ip | regex_escape }}\s'
+    line: "{{ ad_dc_ip }} {{ ad_dc_hostname }}.{{ ad_dc_realm | lower }} {{ ad_dc_hostname }}"
+
+- name: Paquets Samba AD
+  ansible.builtin.apt:
+    name: [samba, smbclient, krb5-user, ldb-tools, ldap-utils, dnsutils, acl, attr]
+    state: present
+    update_cache: true
+    lock_timeout: 300
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+- name: Déjà provisionné ?
+  ansible.builtin.stat:
+    path: /var/lib/samba/private/sam.ldb
+  register: ad_dc_sam
+
+- name: Arrêter et masquer smbd/nmbd/winbind
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+    masked: true
+  loop: [smbd, nmbd, winbind]
+  failed_when: false
+
+- name: Mettre de côté le smb.conf par défaut
+  ansible.builtin.command: mv /etc/samba/smb.conf /etc/samba/smb.conf.orig
+  args:
+    removes: /etc/samba/smb.conf
+  when: not ad_dc_sam.stat.exists
+
+- name: Provisionner le domaine
+  ansible.builtin.command:
+    argv:
+      - samba-tool
+      - domain
+      - provision
+      - --use-rfc2307
+      - --server-role=dc
+      - --dns-backend=SAMBA_INTERNAL
+      - "--realm={{ ad_dc_realm }}"
+      - "--domain={{ ad_dc_domain }}"
+      - "--adminpass={{ ad_dc_admin_password }}"
+      - "--option=dns forwarder = {{ ad_dc_dns_forwarder }}"
+    creates: /var/lib/samba/private/sam.ldb
+
+- name: krb5.conf généré par Samba
+  ansible.builtin.copy:
+    src: /var/lib/samba/private/krb5.conf
+    dest: /etc/krb5.conf
+    remote_src: true
+    mode: "0644"
+
+- name: Activer le service samba-ad-dc
+  ansible.builtin.systemd:
+    name: samba-ad-dc
+    masked: false
+    enabled: true
+    state: started
+
+- name: DNS de la machine = elle-même, puis le routeur
+  ansible.builtin.copy:
+    dest: "{{ item }}"
+    content: |
+      search {{ ad_dc_realm | lower }}
+      nameserver {{ ad_dc_ip }}
+      nameserver {{ ad_dc_dns_forwarder }}
+    mode: "0644"
+  loop: [/etc/resolv.conf.head, /etc/resolv.conf]
+
+- name: Politique de mot de passe adaptée au labo
+  ansible.builtin.command: >
+    samba-tool domain passwordsettings set
+    --complexity=off --min-pwd-length=8 --max-pwd-age=0
+  changed_when: false
+
+- name: Groupes
+  ansible.builtin.shell: |
+    samba-tool group list | grep -qx '{{ item }}' || { samba-tool group add '{{ item }}'; echo CREATED; }
+  args: { executable: /bin/bash }
+  loop: "{{ ad_dc_groups }}"
+  register: ad_dc_grp
+  changed_when: "'CREATED' in ad_dc_grp.stdout"
+
+- name: Utilisateurs et appartenance aux groupes
+  ansible.builtin.shell: |
+    if ! samba-tool user list | grep -qx '{{ item.name }}'; then
+      samba-tool user create '{{ item.name }}' '{{ ad_dc_user_password }}' && echo CREATED
+    fi
+    samba-tool group addmembers '{{ item.group }}' '{{ item.name }}' 2>/dev/null || true
+  args: { executable: /bin/bash }
+  loop: "{{ ad_dc_users }}"
+  register: ad_dc_usr
+  changed_when: "'CREATED' in ad_dc_usr.stdout"

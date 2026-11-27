@@ -1,0 +1,14 @@
+---
+ad_dc_ip: 10.100.30.11
+ad_dc_hostname: ad-dc
+ad_dc_realm: AD.AEROCENTRE.LAN
+ad_dc_domain: AEROCENTRE
+ad_dc_dns_forwarder: 10.100.30.254
+ad_dc_admin_password: "Aero#Admin2026"
+ad_dc_user_password: "Aero#User2026"
+ad_dc_groups: [Operations, Administration, Douane, Surete]
+ad_dc_users:
+  - { name: agent.martin,  group: Operations }
+  - { name: admin.durand,  group: Administration }
+  - { name: douane.leroy,  group: Douane }
+  - { name: surete.petit,  group: Surete }
