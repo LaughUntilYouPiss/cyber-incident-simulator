@@ -1,0 +1,17 @@
+[Unit]
+Description=Application manifestes douane AeroCentre
+After=network.target
+
+[Service]
+User=douane
+Group=douane
+Environment=DB={{ douane_db_dir }}/douane.db
+Environment=DCS_URL={{ douane_dcs_url }}
+Environment=DCS_VERIFY={{ douane_dcs_verify }}
+Environment=LISTEN={{ douane_listen }}
+Environment=PORT={{ douane_port }}
+ExecStart=/usr/bin/python3 {{ douane_dir }}/douane_app.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

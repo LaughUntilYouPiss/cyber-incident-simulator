@@ -1,0 +1,6 @@
+douane_listen: "0.0.0.0"
+douane_port: 8080
+douane_dir: /opt/douane
+douane_db_dir: /var/lib/douane
+douane_dcs_url: "https://10.100.10.12/api/passagers"
+douane_dcs_verify: "false"
