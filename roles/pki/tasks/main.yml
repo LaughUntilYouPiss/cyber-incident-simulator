@@ -1,0 +1,68 @@
+- name: Paquets
+  ansible.builtin.apt:
+    name: [openssl, nginx]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Dossier de la CA (privé)
+  ansible.builtin.file: { path: "{{ pki_dir }}/issued", state: directory, mode: "0700" }
+
+- name: Dossier web
+  ansible.builtin.file: { path: "{{ pki_web_root }}/enroll", state: directory, mode: "0755" }
+
+- name: Clé de la CA
+  ansible.builtin.command:
+    cmd: openssl genrsa -out {{ pki_dir }}/ca.key 4096
+    creates: "{{ pki_dir }}/ca.key"
+
+- name: Certificat racine
+  ansible.builtin.command:
+    cmd: >
+      openssl req -x509 -new -key {{ pki_dir }}/ca.key -sha256 -days 3650
+      -subj "/O=AeroCentre/CN={{ pki_ca_name }}" -out {{ pki_dir }}/ca.crt
+    creates: "{{ pki_dir }}/ca.crt"
+
+- name: Certificats serveurs
+  ansible.builtin.shell: |
+    set -e
+    cd {{ pki_dir }}/issued
+    openssl genrsa -out {{ item.name }}.key 2048
+    openssl req -new -key {{ item.name }}.key \
+      -subj "/O=AeroCentre/CN={{ item.name }}.{{ pki_domain }}" -out {{ item.name }}.csr
+    printf "subjectAltName=DNS:{{ item.name }}.{{ pki_domain }},DNS:{{ item.name }},IP:{{ item.ip }}\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n" > {{ item.name }}.ext
+    openssl x509 -req -in {{ item.name }}.csr -CA {{ pki_dir }}/ca.crt -CAkey {{ pki_dir }}/ca.key \
+      -CAcreateserial -days 825 -sha256 -extfile {{ item.name }}.ext -out {{ item.name }}.crt
+  args: { executable: /bin/bash, creates: "{{ pki_dir }}/issued/{{ item.name }}.crt" }
+  loop: "{{ pki_hosts }}"
+  loop_control: { label: "{{ item.name }}" }
+
+- name: Publier la racine
+  ansible.builtin.copy:
+    src: "{{ pki_dir }}/ca.crt"
+    dest: "{{ pki_web_root }}/ca.crt"
+    remote_src: true
+    mode: "0644"
+
+- name: Publier les certificats émis (accès protégé)
+  ansible.builtin.shell: >
+    cp -u {{ pki_dir }}/issued/*.crt {{ pki_dir }}/issued/*.key {{ pki_web_root }}/enroll/ &&
+    chmod 0644 {{ pki_web_root }}/enroll/*
+  changed_when: false
+
+- name: Fichier htpasswd
+  ansible.builtin.shell: >
+    echo "{{ pki_enroll_user }}:$(openssl passwd -apr1 '{{ pki_enroll_password }}')" > /etc/nginx/pki.htpasswd &&
+    chown root:www-data /etc/nginx/pki.htpasswd && chmod 0640 /etc/nginx/pki.htpasswd
+  args: { creates: /etc/nginx/pki.htpasswd }
+
+- name: Retirer le site nginx par défaut
+  ansible.builtin.file: { path: /etc/nginx/sites-enabled/default, state: absent }
+  notify: Recharger nginx
+
+- name: Configuration nginx
+  ansible.builtin.template: { src: pki.conf.j2, dest: /etc/nginx/conf.d/pki.conf, mode: "0644" }
+  notify: Recharger nginx
+
+- name: nginx démarré et activé
+  ansible.builtin.service: { name: nginx, state: started, enabled: true }

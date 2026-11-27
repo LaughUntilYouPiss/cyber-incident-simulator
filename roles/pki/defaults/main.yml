@@ -1,0 +1,12 @@
+pki_ca_name: "AeroCentre Root CA"
+pki_domain: aerocentre.lan
+pki_dir: /etc/pki-aero
+pki_web_root: /var/www/pki
+pki_enroll_user: enroll
+pki_enroll_password: "Enroll-Labo-2026"
+pki_hosts:
+  - { name: pki,          ip: 10.100.50.12 }
+  - { name: fids-web,     ip: 10.100.10.11 }
+  - { name: dcs-server,   ip: 10.100.10.12 }
+  - { name: douane-app,   ip: 10.100.40.11 }
+  - { name: badge-server, ip: 10.100.50.11 }

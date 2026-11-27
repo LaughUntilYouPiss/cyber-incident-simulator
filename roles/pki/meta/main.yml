@@ -1,0 +1,9 @@
+galaxy_info:
+  author: flafssal
+  description: "Rôle pki pour AeroCentre"
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Debian
+      versions: [trixie]
+dependencies: []

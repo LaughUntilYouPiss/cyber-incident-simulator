@@ -1,0 +1,16 @@
+server {
+  listen 80 default_server;
+  server_name _;
+  root {{ pki_web_root }};
+  location / { autoindex on; }
+  location /enroll/ { auth_basic "PKI"; auth_basic_user_file /etc/nginx/pki.htpasswd; autoindex on; }
+}
+server {
+  listen 443 ssl default_server;
+  server_name _;
+  ssl_certificate     {{ pki_dir }}/issued/pki.crt;
+  ssl_certificate_key {{ pki_dir }}/issued/pki.key;
+  root {{ pki_web_root }};
+  location / { autoindex on; }
+  location /enroll/ { auth_basic "PKI"; auth_basic_user_file /etc/nginx/pki.htpasswd; autoindex on; }
+}
