@@ -1,0 +1,37 @@
+- name: Paquets
+  ansible.builtin.apt:
+    name: [python3, sqlite3]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Utilisateur système
+  ansible.builtin.user: { name: badge, system: true, shell: /usr/sbin/nologin, create_home: false }
+
+- name: Dossiers
+  ansible.builtin.file: { path: "{{ item }}", state: directory, owner: badge, group: badge, mode: "0755" }
+  loop: ["{{ badge_dir }}", "{{ badge_db_dir }}"]
+
+- name: Application
+  ansible.builtin.copy: { src: badge_app.py, dest: "{{ badge_dir }}/badge_app.py", mode: "0755" }
+  notify: Redémarrer badge
+
+- name: Script SQL
+  ansible.builtin.copy: { src: init_badges.sql, dest: "{{ badge_dir }}/init_badges.sql", mode: "0644" }
+
+- name: Initialisation de la base (rejouable)
+  ansible.builtin.command: sqlite3 {{ badge_db_dir }}/badges.db ".read {{ badge_dir }}/init_badges.sql"
+  changed_when: false
+
+- name: Droits sur la base
+  ansible.builtin.file: { path: "{{ badge_db_dir }}/badges.db", owner: badge, group: badge, mode: "0640" }
+
+- name: Unité systemd
+  ansible.builtin.template: { src: badge.service.j2, dest: /etc/systemd/system/badge.service, mode: "0644" }
+  notify: Redémarrer badge
+
+- name: Recharger systemd
+  ansible.builtin.systemd: { daemon_reload: true }
+
+- name: Service démarré
+  ansible.builtin.service: { name: badge, state: started, enabled: true }

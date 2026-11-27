@@ -1,0 +1,12 @@
+[Unit]
+Description=Serveur de badges AeroCentre
+After=network.target
+
+[Service]
+User=badge
+Group=badge
+ExecStart=/usr/bin/python3 {{ badge_dir }}/badge_app.py {{ badge_db_dir }}/badges.db {{ badge_listen }} {{ badge_port }}
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

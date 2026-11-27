@@ -1,0 +1,2 @@
+- name: Redémarrer badge
+  ansible.builtin.service: { name: badge, state: restarted }

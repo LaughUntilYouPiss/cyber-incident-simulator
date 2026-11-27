@@ -1,0 +1,4 @@
+badge_listen: "0.0.0.0"
+badge_port: 8080
+badge_dir: /opt/badge
+badge_db_dir: /var/lib/badge
